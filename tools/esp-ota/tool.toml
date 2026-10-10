@@ -1,0 +1,4 @@
+name = "esp-ota"
+summary = "Discover ESP32/ESP8266 devices on the local network and flash firmware to them over WiFi (OTA)."
+tags = ["esp32", "esp8266", "firmware", "embedded", "network"]
+command = ["uv", "run", "--quiet", "--project", "{tool_dir}", "esp-ota"]

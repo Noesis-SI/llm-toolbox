@@ -1,0 +1,10 @@
+[project]
+name = "tb-contract"
+version = "0.1.0"
+description = "Shared implementation of the toolbox output contract for Python tools."
+requires-python = ">=3.11"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

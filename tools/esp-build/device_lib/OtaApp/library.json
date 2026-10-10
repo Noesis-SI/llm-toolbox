@@ -1,0 +1,7 @@
+{
+  "name": "OtaApp",
+  "version": "0.1.0",
+  "description": "Owns setup()/loop(), keeps WiFi and ArduinoOTA alive independently of application code, and falls back to an OTA-only safe mode when the application crash-loops.",
+  "frameworks": "arduino",
+  "platforms": "espressif32"
+}

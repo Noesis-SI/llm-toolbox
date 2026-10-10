@@ -1,0 +1,4 @@
+name = "esp-build"
+summary = "Scaffold and compile ESP32 Arduino firmware that stays OTA-updatable; outputs a .bin for `esp-ota flash`."
+tags = ["esp32", "firmware", "embedded", "arduino", "platformio", "compile"]
+command = ["uv", "run", "--quiet", "--project", "{tool_dir}", "esp-build"]

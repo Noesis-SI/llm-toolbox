@@ -1,0 +1,182 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# ///
+import json
+import os
+import subprocess
+import sys
+import tomllib
+from pathlib import Path
+from typing import Any, NoReturn
+
+TOOLS_DIR = Path(__file__).resolve().parent / "tools"
+REQUIRED_MANIFEST_FIELDS = {"name": str, "summary": str, "command": list}
+MAX_SUMMARY_LENGTH = 140
+CHECK_TIMEOUT_SECONDS = 180
+INVALID_FLAG_PROBE = "--tb-contract-probe"
+
+HELP = """\
+tb - a toolbox of command-line tools designed to be called by LLM agents.
+
+Usage:
+  tb list [QUERY]        List tools (optionally filtered by a word in the name, summary or tags).
+  tb TOOL --help         Show a tool's subcommands, flags, examples and output fields.
+  tb TOOL [ARGS...]      Run a tool.
+  tb check [TOOL]        Verify that tools obey the output contract (run after adding or changing a tool).
+
+Every tool follows the same contract:
+  stdout   Exactly one JSON object:
+             success: {"ok": true, "data": {...}}
+             failure: {"ok": false, "error": {"code": "...", "message": "...", "hint": "..."}}
+           `hint` says what to do next. (`--help` is the one exception: it prints plain text.)
+  stderr   Progress and logs only. Never needed to interpret the result.
+  exit     0 success, 1 the tool ran and failed, 2 it was called incorrectly.
+  Tools never prompt for input and always time out on their own.
+
+Examples:
+  tb list
+  tb list esp
+  tb esp-ota --help
+"""
+
+
+def emit(payload: dict[str, Any], exit_code: int) -> NoReturn:
+    json.dump(payload, sys.stdout)
+    sys.stdout.write("\n")
+    sys.exit(exit_code)
+
+
+def fail(code: str, message: str, hint: str, exit_code: int, details: dict[str, Any] | None = None) -> NoReturn:
+    error: dict[str, Any] = {"code": code, "message": message, "hint": hint}
+    if details:
+        error["details"] = details
+    emit({"ok": False, "error": error}, exit_code)
+
+
+def load_manifests() -> dict[str, dict[str, Any]]:
+    manifests = {}
+    for manifest_path in sorted(TOOLS_DIR.glob("*/tool.toml")):
+        manifest = tomllib.loads(manifest_path.read_text())
+        manifest["dir"] = manifest_path.parent
+        manifests[manifest_path.parent.name] = manifest
+    return manifests
+
+
+def tool_command(manifest: dict[str, Any]) -> list[str]:
+    return [part.replace("{tool_dir}", str(manifest["dir"])) for part in manifest["command"]]
+
+
+def list_tools(query: str | None) -> NoReturn:
+    tools = [
+        {"name": name, "summary": manifest.get("summary", ""), "tags": manifest.get("tags", [])}
+        for name, manifest in load_manifests().items()
+    ]
+    if query:
+        needle = query.lower()
+        tools = [tool for tool in tools if needle in json.dumps(tool).lower()]
+    emit({"ok": True, "data": {"tools": tools, "usage": "tb TOOL --help"}}, 0)
+
+
+def manifest_violations(directory_name: str, manifest: dict[str, Any]) -> list[str]:
+    violations = [
+        f"tool.toml: `{field}` must be a {expected_type.__name__}"
+        for field, expected_type in REQUIRED_MANIFEST_FIELDS.items()
+        if not isinstance(manifest.get(field), expected_type)
+    ]
+    if not violations:
+        if manifest["name"] != directory_name:
+            violations.append(f"tool.toml: `name` must equal the directory name `{directory_name}`")
+        if len(manifest["summary"]) > MAX_SUMMARY_LENGTH:
+            violations.append(f"tool.toml: `summary` must be at most {MAX_SUMMARY_LENGTH} characters")
+    return violations
+
+
+def invocation_violations(manifest: dict[str, Any]) -> list[str]:
+    violations = []
+    command = tool_command(manifest)
+
+    help_run = subprocess.run([*command, "--help"], capture_output=True, text=True, timeout=CHECK_TIMEOUT_SECONDS)
+    if help_run.returncode != 0:
+        violations.append(f"`--help` exited {help_run.returncode}, expected 0")
+    if "example" not in help_run.stdout.lower():
+        violations.append("`--help` must print copy-pasteable examples on stdout")
+
+    probe_run = subprocess.run(
+        [*command, INVALID_FLAG_PROBE], capture_output=True, text=True, timeout=CHECK_TIMEOUT_SECONDS
+    )
+    if probe_run.returncode != 2:
+        violations.append(f"an invalid invocation exited {probe_run.returncode}, expected 2")
+    try:
+        error = json.loads(probe_run.stdout)
+        well_formed = error["ok"] is False and all(
+            isinstance(error["error"][field], str) and error["error"][field] for field in ("code", "message", "hint")
+        )
+    except (ValueError, KeyError, TypeError):
+        well_formed = False
+    if not well_formed:
+        violations.append(
+            'an invalid invocation must print {"ok": false, "error": {"code", "message", "hint"}} as the only stdout'
+        )
+    return violations
+
+
+def check_tools(only: str | None) -> NoReturn:
+    manifests = load_manifests()
+    if only:
+        if only not in manifests:
+            fail("unknown_tool", f"No tool named `{only}`.", "Run `tb list` to see available tools.", 2)
+        manifests = {only: manifests[only]}
+
+    violations_by_tool = {}
+    for name, manifest in manifests.items():
+        violations = manifest_violations(name, manifest)
+        violations_by_tool[name] = violations or invocation_violations(manifest)
+
+    failing = {name: violations for name, violations in violations_by_tool.items() if violations}
+    if failing:
+        fail(
+            "contract_violations",
+            f"{len(failing)} of {len(manifests)} tools violate the contract.",
+            "Fix each violation listed in `details`, then rerun `tb check`. The contract is described in AGENTS.md.",
+            1,
+            failing,
+        )
+    emit({"ok": True, "data": {"checked": sorted(manifests)}}, 0)
+
+
+def run_tool(name: str, arguments: list[str]) -> NoReturn:
+    manifests = load_manifests()
+    if name not in manifests:
+        fail(
+            "unknown_tool",
+            f"No tool named `{name}`.",
+            f"Run `tb list` to see available tools. Available: {', '.join(manifests) or 'none'}.",
+            2,
+        )
+    command = [*tool_command(manifests[name]), *arguments]
+    os.execvp(command[0], command)
+
+
+def main() -> None:
+    arguments = sys.argv[1:]
+    if not arguments or arguments[0] in ("-h", "--help", "help"):
+        print(HELP, end="")
+        sys.exit(0)
+    match arguments:
+        case ["list"]:
+            list_tools(None)
+        case ["list", query]:
+            list_tools(query)
+        case ["check"]:
+            check_tools(None)
+        case ["check", name]:
+            check_tools(name)
+        case ["list" | "check", *_]:
+            fail("usage_error", f"`tb {arguments[0]}` takes at most one argument.", "Run `tb --help`.", 2)
+        case [name, *tool_arguments]:
+            run_tool(name, tool_arguments)
+
+
+main()

@@ -1,0 +1,19 @@
+[project]
+name = "esp-ota"
+version = "0.1.0"
+description = "Discover ESP devices on the local network and flash them over the air."
+requires-python = ">=3.11"
+dependencies = ["tb-contract", "zeroconf>=0.130"]
+
+[project.scripts]
+esp-ota = "esp_ota.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.uv.sources]
+tb-contract = { path = "../../lib/tb_contract", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

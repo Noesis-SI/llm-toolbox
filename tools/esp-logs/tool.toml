@@ -1,0 +1,4 @@
+name = "esp-logs"
+summary = "Read the log output and health (uptime, reset reason, safe mode) of an ESP32 built with esp-build, over WiFi."
+tags = ["esp32", "logs", "debug", "embedded", "network", "serial"]
+command = ["uv", "run", "--quiet", "--project", "{tool_dir}", "esp-logs"]
