@@ -13,3 +13,18 @@ next, and no interactive prompts.
 ```
 
 Requires [uv](https://docs.astral.sh/uv/).
+
+## Browser (`browse`)
+
+Headless Chromium (Playwright) for pages that need JavaScript, forms or clicks. It renders a page's
+visible text, takes a screenshot, or runs fill/click/wait_for/press/extract steps. It stops and reports
+a `blocked` error at a CAPTCHA, bot check or access wall; it does not try to get past one.
+
+```
+./tb browse text https://example.com
+./tb browse screenshot https://example.com /tmp/page.png
+./tb browse run https://site.example/form --steps /tmp/steps.json
+```
+
+Setup, once per machine: `cd tools/browse && uv run --project . playwright install chromium`, then
+Chromium's system libraries must be present (see `./tb browse --help`).

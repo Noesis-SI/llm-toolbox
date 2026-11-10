@@ -1,0 +1,4 @@
+name = "browse"
+summary = "Render a page in headless Chromium (JavaScript, forms, clicks); return text or a screenshot. Stops at CAPTCHAs."
+tags = ["web", "browser", "playwright", "chromium", "javascript", "form", "scrape", "render", "screenshot"]
+command = ["uv", "run", "--quiet", "--project", "{tool_dir}", "browse"]

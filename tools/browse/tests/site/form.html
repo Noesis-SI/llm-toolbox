@@ -1,0 +1,12 @@
+<!doctype html><html><head><title>Search form</title></head>
+<body>
+<input id="q" type="text" placeholder="query">
+<button id="go" type="button">Search</button>
+<div id="out"></div>
+<script>
+document.getElementById('go').addEventListener('click', function(){
+  var v = document.getElementById('q').value;
+  setTimeout(function(){ document.getElementById('out').innerHTML = '<p class="hit">Result for ' + v + '</p>'; }, 100);
+});
+</script>
+</body></html>
